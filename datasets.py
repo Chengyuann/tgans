@@ -18,7 +18,7 @@ class base_set:
         self.all_clip_name = {}
         self.all_clip_wav = []  # 新增，用于存储原始的wav数据
 
-    def cal_spec(self, mt):  
+    def cal_spec(self, mt):
         # 计算频谱
         clip_dir, set_name = {}, []
         if 'dev' in self.st:
@@ -30,8 +30,7 @@ class base_set:
 
         self.set_clip_addr, set_mid, set_label = {}, {}, {}
         for set_type in set_name:
-            self.set_clip_addr[set_type] = get_clip_addr(clip_dir[set_type])
-            print(f"set_clip_addr[{set_type}]: {self.set_clip_addr[set_type]}")
+            self.set_clip_addr[set_type] = get_clip_addr(clip_dir[set_type]) 
             set_mid[set_type] = extract_mid(self.set_clip_addr[set_type], self.st, self.dt)
             set_label[set_type] = generate_label(self.set_clip_addr[set_type], self.st, self.dt)
 
@@ -56,10 +55,10 @@ class base_set:
                                                     top_dir=self.pm['spec_dir'],
                                                     mt=mt,
                                                     data_type=self.dt,
-                                                    setn=self.pm['train_set'])
+                                                    setn=self.pm['train_set'],
+                                                    rescale_ctl=True)
 
         self.all_clip_wav.extend(all_clip_wav)  # 保存所有的wav数据
-        print(f"Generated {len(all_clip_wav)} wav files for mt={mt}")
 
         if self.all_clip_spec is None:
             self.all_clip_spec = all_clip_spec
@@ -74,9 +73,6 @@ class base_set:
 
     def get_clip_num(self):
         return self.all_clip_spec.shape[0]
-
-
-
 
 
 class seg_set(Dataset, base_set):
@@ -117,11 +113,7 @@ class seg_set(Dataset, base_set):
         clip_id = idx // self.seg_per_clip
         print(f"Fetching wav data for idx={idx}, clip_id={clip_id}")
         print(f"Total wav files available: {len(self.all_clip_wav)}")
-        if clip_id < len(self.all_clip_wav):
-            return self.all_clip_wav[clip_id]
-        else:
-            raise IndexError(f"clip_id {clip_id} out of range for total wav files {len(self.all_clip_wav)}")
-
+        return self.all_clip_wav[clip_id]
 
 
 
