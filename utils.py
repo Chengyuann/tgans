@@ -25,6 +25,7 @@ def generate_spec(clip_addr, spec, fft_num, mel_bin, frame_hop, top_dir,
 
     for set_type in clip_addr.keys():  # 'dev', 'eval'
         print(f"Processing set_type: {set_type}")
+        print(f"Clip addresses for {set_type}: {clip_addr[set_type]}")
         save_dir = os.path.join(top_dir, set_type, mt)
         os.makedirs(save_dir, exist_ok=True)
         raw_data_file = os.path.join(save_dir,
@@ -35,23 +36,30 @@ def generate_spec(clip_addr, spec, fft_num, mel_bin, frame_hop, top_dir,
             for idx in tqdm(range(len(clip_addr[set_type]))):
                 clip_path = clip_addr[set_type][idx]
                 print(f"Loading clip from: {clip_path}")
-                clip, sr = librosa.load(clip_path, sr=None, mono=True)
-                print(f"Loaded clip of length: {len(clip)}")
-                all_clip_wav.append(clip)  # 保存原始的wav数据
-                if spec == 'mel':
-                    mel = librosa.feature.melspectrogram(y=clip, sr=sr, n_fft=fft_num,
-                                                         hop_length=frame_hop, n_mels=mel_bin)
-                    mel_db = librosa.power_to_db(mel, ref=1)  # log-mel, (mel_bin, frame_num)
-                    if set_clip_spec is None:
-                        set_clip_spec = np.zeros((len(clip_addr[set_type]), mel_bin, mel.shape[1]), dtype=np.float32)
-                    set_clip_spec[idx, :, :] = mel_db
-                elif spec == 'stft':
-                    stft = librosa.stft(y=clip, n_fft=fft_num, hop_length=frame_hop)
-                    stabs = np.abs(stft)
-                    if set_clip_spec is None:
-                        set_clip_spec = np.zeros((len(clip_addr[set_type]), stabs.shape[0], stabs.shape[1]),
-                                                 dtype=np.float32)
-                    set_clip_spec[idx, :, :] = stabs
+                try:
+                    clip, sr = librosa.load(clip_path, sr=None, mono=True)
+                    if clip is None or len(clip) == 0:
+                        print(f"Failed to load clip: {clip_path}")
+                    else:
+                        print(f"Loaded clip of length: {len(clip)}")
+                        all_clip_wav.append(clip)  # 保存原始的wav数据
+
+                    if spec == 'mel':
+                        mel = librosa.feature.melspectrogram(y=clip, sr=sr, n_fft=fft_num,
+                                                             hop_length=frame_hop, n_mels=mel_bin)
+                        mel_db = librosa.power_to_db(mel, ref=1)  # log-mel, (mel_bin, frame_num)
+                        if set_clip_spec is None:
+                            set_clip_spec = np.zeros((len(clip_addr[set_type]), mel_bin, mel.shape[1]), dtype=np.float32)
+                        set_clip_spec[idx, :, :] = mel_db
+                    elif spec == 'stft':
+                        stft = librosa.stft(y=clip, n_fft=fft_num, hop_length=frame_hop)
+                        stabs = np.abs(stft)
+                        if set_clip_spec is None:
+                            set_clip_spec = np.zeros((len(clip_addr[set_type]), stabs.shape[0], stabs.shape[1]),
+                                                     dtype=np.float32)
+                        set_clip_spec[idx, :, :] = stabs
+                except Exception as e:
+                    print(f"Error loading clip {clip_path}: {e}")
             np.save(raw_data_file, set_clip_spec)
         else:
             set_clip_spec = np.load(raw_data_file)
@@ -62,6 +70,7 @@ def generate_spec(clip_addr, spec, fft_num, mel_bin, frame_hop, top_dir,
         print(f"Processed {len(clip_addr[set_type])} clips for set_type {set_type}")
 
     print(f"Total wav files processed: {len(all_clip_wav)}")
+    
     frame_num_per_clip = all_clip_spec.shape[-1]
     save_dir = os.path.join(top_dir, setn, mt)
     os.makedirs(save_dir, exist_ok=True)
@@ -81,6 +90,7 @@ def generate_spec(clip_addr, spec, fft_num, mel_bin, frame_hop, top_dir,
 
     all_clip_spec = all_clip_spec.reshape(-1, mel_bin, frame_num_per_clip)
     return all_clip_spec, all_clip_wav  # 返回计算的频谱和原始的wav数据
+
 
 
 

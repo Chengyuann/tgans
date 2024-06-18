@@ -78,6 +78,7 @@ class base_set:
 
 
 
+
 class seg_set(Dataset, base_set):
     # slice clip into segment
     def __init__(self, param, set_type, data_type='train'):
