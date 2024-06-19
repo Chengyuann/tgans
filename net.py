@@ -168,17 +168,20 @@ class Discriminator(nn.Module):
         return pred, feat
 
 class TgramNet(nn.Module):
-    def __init__(self, num_layer=3, mel_bins=128, win_len=1024, hop_len=512):
+    def __init__(self, num_layer=3, mel_bins=128, win_len=1024, hop_len=512, embedding_dim=512):
         super(TgramNet, self).__init__()
-        self.conv_extrctor = nn.Conv1d(1, mel_bins, win_len, hop_len, win_len // 2, bias=False)
+        self.conv_extractor = nn.Conv1d(1, mel_bins, win_len, hop_len, win_len // 2, bias=False)
         self.conv_encoder = nn.Sequential(
             *[nn.Sequential(
                 nn.LayerNorm(313),
                 nn.LeakyReLU(0.2, inplace=True),
                 nn.Conv1d(mel_bins, mel_bins, 3, 1, 1, bias=False),
             ) for idx in range(num_layer)])
+        self.fc = nn.Linear(mel_bins * 313, embedding_dim)  # Ensure output dimension matches Discriminator's embedding dimension
 
     def forward(self, x):
-        out = self.conv_extrctor(x)
+        out = self.conv_extractor(x)
         out = self.conv_encoder(out)
+        out = out.view(out.size(0), -1)  # Flatten the output
+        out = self.fc(out)  # Apply the fully connected layer
         return out
