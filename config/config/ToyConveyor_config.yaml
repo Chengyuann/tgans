@@ -1,0 +1,48 @@
+dataset_dir: /home/macy/Data/DCASE20/dataset_dir
+model_dir: ./mymodel
+spec_dir: ../../spec
+log_dir: ./log
+
+mt:
+  train: ['ToyConveyor']
+  test: ['ToyConveyor']
+
+train_set: 'deval'  # 'dev', 'eval', 'deval'
+
+feat:
+  spec: 'mel'
+  fft_num: 2048
+  mel_bin: 128
+  frame_hop: 512
+  frame_num: 128
+  graph_hop_f: 1
+
+net:
+  act: ['leakyrelu', 'relu']  # Encoder, Decoder
+  normalize: {'d':'ln', 'g': 'ln'}
+  nz: 256
+  ndf: 32
+  ngf: 32
+  isize: 128
+
+train:
+  lrD: 0.0002
+  lrG: 0.0002
+  beta1: 0.5
+  epoch: 50
+  bs: 512
+  wgan:
+    feat_match_eff: 0.05
+    match_item: {'mu': 1}  # 'mu': 1, 'sigma': 1
+    ncritic: 1
+    lambda_gp: 10  # for gradient penalty
+
+detect:
+  p: 0.1
+
+repre:
+  normal: 0
+  anomaly: 1
+
+#epoch 49: [recon: 2.0219e-03] [d2g: 3.0023e-03] [gloss: 2.1720e-03] [best: 0.7193] [time: 4416s]
+#ToyConveyor: [AUC: 0.7811] [pAUC: 0.6271] [aver: 0.7041] [metric: G_z_2_sum]
