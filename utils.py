@@ -24,25 +24,21 @@ def generate_spec(clip_addr, spec, fft_num, mel_bin, frame_hop, top_dir,
     all_clip_wav = []
 
     for set_type in clip_addr.keys():  # 'dev', 'eval'
-        print(f"Processing set_type: {set_type}")
-        print(f"Number of clips for {set_type}: {len(clip_addr[set_type])}")
-        if len(clip_addr[set_type]) > 5:
-            print(f"First 5 clip addresses for {set_type}: {clip_addr[set_type][:5]}")
-        else:
-            print(f"Clip addresses for {set_type}: {clip_addr[set_type]}")
 
         save_dir = os.path.join(top_dir, set_type, mt)
         os.makedirs(save_dir, exist_ok=True)
         raw_data_file = os.path.join(save_dir,
                                      f'{data_type}_raw_{spec}_{mel_bin}_{fft_num}_{frame_hop}_1.npy')
         raw_wav_file = os.path.join(save_dir,
-                                     f'{data_type}_raw_wav.npy')
+                                    f'{data_type}_raw_wav.npy')
 
+        # 初始化set_clip_spec为空
+        set_clip_spec = None
+
+        # 检查raw_data_file是否存在，如果不存在则生成它
         if not os.path.exists(raw_data_file):
-            set_clip_spec = None
             for idx in tqdm(range(len(clip_addr[set_type]))):
                 clip_path = clip_addr[set_type][idx]
-                print(f"Loading clip from: {clip_path}")
                 try:
                     # 检查文件路径是否存在
                     if not os.path.exists(clip_path):
@@ -57,7 +53,7 @@ def generate_spec(clip_addr, spec, fft_num, mel_bin, frame_hop, top_dir,
                         print(f"Failed to load clip: {clip_path}")
                         continue
                     
-                    print(f"Loaded clip of length: {len(clip)}")
+
                     all_clip_wav.append(clip)  # 保存原始的wav数据
 
                     if spec == 'mel':
@@ -78,19 +74,32 @@ def generate_spec(clip_addr, spec, fft_num, mel_bin, frame_hop, top_dir,
                     print(f"Error loading clip {clip_path}: {e}")
             
             np.save(raw_data_file, set_clip_spec)
-            np.save(raw_wav_file, all_clip_wav)
         else:
             set_clip_spec = np.load(raw_data_file)
+
+        # 如果set_clip_spec存在，则将它添加到all_clip_spec
+        if set_clip_spec is not None:
+            if all_clip_spec is None:
+                all_clip_spec = set_clip_spec
+            else:
+                all_clip_spec = np.vstack((all_clip_spec, set_clip_spec))
+        
+
+        # 检查raw_wav_file是否存在，如果不存在则生成它
+        if not os.path.exists(raw_wav_file):
+            all_clip_wav = []
+            for idx in tqdm(range(len(clip_addr[set_type]))):
+                clip_path = clip_addr[set_type][idx]
+                try:
+                    clip, sr = librosa.load(clip_path, sr=None, mono=True)
+                    if clip is not None and len(clip) > 0:
+                        all_clip_wav.append(clip)
+                except Exception as e:
+                    print(f"Error loading clip {clip_path}: {e}")
+            np.save(raw_wav_file, all_clip_wav)
+        else:
             all_clip_wav = np.load(raw_wav_file, allow_pickle=True)
 
-        if all_clip_spec is None:
-            all_clip_spec = set_clip_spec
-        else:
-            all_clip_spec = np.vstack((all_clip_spec, set_clip_spec))
-        
-        print(f"Processed {len(clip_addr[set_type])} clips for set_type {set_type}")
-
-    print(f"Total wav files processed: {len(all_clip_wav)}")
     
     frame_num_per_clip = all_clip_spec.shape[-1]
     save_dir = os.path.join(top_dir, setn, mt)

@@ -17,14 +17,11 @@ from densenet import AEDC, Discriminator,TgramNet
 from datasets import seg_set, clip_set
 
 
-with open('/home/macy/Data/DCASE20/code/dcase20/myconfig/valve_config.yaml') as fp:
-    param = yaml.safe_load(fp)
-
+def load_config(config_path):
+    with open(config_path) as fp:
+        return yaml.safe_load(fp)
 
 class D2GLoss(torch.nn.Module):
-    '''
-        Feature matching loss described in the paper.
-    '''
     def __init__(self, cfg):
         super(D2GLoss, self).__init__()
         self.cfg = cfg
@@ -47,16 +44,11 @@ class D2GLoss(torch.nn.Module):
             loss += sigma_eff * norm
         return loss
 
-
 def compute_gradient_penalty(D, real_samples, fake_samples, device):
-    """Calculates the gradient penalty loss for WGAN GP"""
-    # Random weight term for interpolation between real and fake samples
     alpha = torch.rand((real_samples.shape[0], 1, 1, 1), dtype=torch.float32, device=device)
-    # Get random interpolation between real and fake samples
     interpolates = (alpha * real_samples + ((1 - alpha) * fake_samples)).requires_grad_(True)
     d_interpolates = D(interpolates)[0].view(-1, 1)
     fake = torch.ones((real_samples.shape[0], 1), dtype=torch.float32, device=device)
-    # Get gradient w.r.t. interpolates
     gradients = autograd.grad(
         outputs=d_interpolates,
         inputs=interpolates,
@@ -64,13 +56,12 @@ def compute_gradient_penalty(D, real_samples, fake_samples, device):
         create_graph=True,
         retain_graph=True,
         only_inputs=True,
-    )[0]  # gradients.shape为B*1*128*128
-    gradients = gradients.view(gradients.size(0), -1)  # reshape为B*(128**2)
+    )[0]
+    gradients = gradients.view(gradients.size(0), -1)
     gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
     return gradient_penalty
 
-
-def train_one_epoch(netD, netG, tr_ld, optimD, optimG, device, d2g_eff):
+def train_one_epoch(netD, netG, tr_ld, optimD, optimG, device, d2g_eff, param):
     netD.train()
     netG.train()
     aver_loss, gloss_num = {'recon': 0, 'd2g': 0, 'gloss': 0}, 0
@@ -111,7 +102,6 @@ def train_one_epoch(netD, netG, tr_ld, optimD, optimG, device, d2g_eff):
     aver_loss['gloss'] = f"{aver_loss['gloss']:.4e}"
     return netD, netG, aver_loss
 
-
 def get_d_aver_emb(netD, tgram_net, train_set, device):
     '''
         extract embeddings of the train set via the gdconv layer of the discriminator and tgram_net
@@ -123,17 +113,16 @@ def get_d_aver_emb(netD, tgram_net, train_set, device):
         for idx in range(train_set.get_clip_num()):
             mel, mid, _ = train_set.get_clip_data(idx)
             wav = train_set.get_clip_wav_data(idx)
-            print(f"Processing clip {idx}, mid={mid}")
             
             mel = torch.from_numpy(mel).to(device)
             wav = torch.from_numpy(wav).unsqueeze(0).to(device)
             
             _, feat_real = netD(mel)
             feat_real = feat_real.squeeze().mean(dim=0).cpu().numpy()
-            
+            wav=wav.unsqueeze(1)
+
             tgram_feat = tgram_net(wav)
             tgram_feat = tgram_feat.squeeze().mean(dim=0).cpu().numpy()
-
             if feat_real.shape != tgram_feat.shape:
                 raise ValueError(f"Shape mismatch: Discriminator feature shape {feat_real.shape} "
                                  f"and TgramNet feature shape {tgram_feat.shape}")
@@ -147,9 +136,7 @@ def get_d_aver_emb(netD, tgram_net, train_set, device):
     
     return train_embs
 
-
-
-def train(netD, netG, tgram_net, tr_ld, te_ld, optimD, optimG, logger, device, best_aver=None):
+def train(netD, netG, tgram_net, tr_ld, te_ld, optimD, optimG, logger, device, best_aver, param):
     if best_aver is not None:
         bestD = copy.deepcopy(netD.state_dict())
         bestG = copy.deepcopy(netG.state_dict())
@@ -159,13 +146,13 @@ def train(netD, netG, tgram_net, tr_ld, te_ld, optimD, optimG, logger, device, b
     for i in range(param['train']['epoch']):
         start = time.time()
 
-        netD, netG, aver_loss = train_one_epoch(netD, netG, tr_ld, optimD, optimG, device, d2g_eff)
+        netD, netG, aver_loss = train_one_epoch(netD, netG, tr_ld, optimD, optimG, device, d2g_eff, param)
 
         train_embs = get_d_aver_emb(netD, tgram_net, tr_ld.dataset, device)
 
         mt_aver, metric = np.zeros((len(param['mt']['test']), 3)), {}
         for j, mt in enumerate(te_ld.keys()):
-            mt_aver[j], metric[mt] = test(netD, netG, te_ld[mt], train_embs, logger, device)
+            mt_aver[j], metric[mt] = test(netD, netG, te_ld[mt], train_embs, tgram_net,logger, device, param)
         aver_all_mt = np.mean(mt_aver[:, 2])
         if best_aver is None or best_aver < aver_all_mt:
             best_aver = aver_all_mt
@@ -179,11 +166,7 @@ def train(netD, netG, tgram_net, tr_ld, te_ld, optimD, optimG, logger, device, b
 
     torch.save({'netD': bestD, 'netG': bestG, 'best_aver': best_aver}, param['model_pth'])
 
-
-
-# @profile
-def test(netD, netG, te_ld, train_embs, logger, device):
-    # detect_location, score_type, score_comb= ('x', 'z'), ('2', '1'), ('sum', 'min', 'max')
+def test(netD, netG, te_ld, train_embs, tgram_net,logger, device, param):
     D_metric = ['D_maha', 'D_knn', 'D_lof', 'D_cos']
     G_metric = ['G_x_2_sum', 'G_x_2_min', 'G_x_2_max', 'G_x_1_sum', 'G_x_1_min', 'G_x_1_max',
                 'G_z_2_sum', 'G_z_2_min', 'G_z_2_max', 'G_z_1_sum', 'G_z_1_min', 'G_z_1_max',
@@ -206,23 +189,33 @@ def test(netD, netG, te_ld, train_embs, logger, device):
 
     netD.eval()
     netG.eval()
-    # {mid: []}
     y_true_all, y_score_all = [{} for _ in metric2id.keys()], [{} for _ in metric2id.keys()]
     with torch.no_grad():
-        for mel, mid, status in te_ld:  # mel: 1*186*1*128*128
+        for mel, mid, status,idx in te_ld:
             mel = mel.squeeze(0).to(device)
+            wav = te_ld.dataset.get_clip_wav_data(idx)
+            #print(f"te_ld wav0:{wav.shape}")
+            wav = torch.from_numpy(wav).unsqueeze(0).to(device)
+            #print(f"te_ld wav1:{wav.shape}")
+            wav = wav.unsqueeze(1)  # Add channel dimension for Conv1D
+
             _, feat_t = netD(mel)
             recon = netG(mel)
             melz = netG(mel, outz=True)
             reconz = netG(recon, outz=True)
             feat_t = feat_t.mean(axis=0, keepdim=True).cpu().numpy()
+            tgram_feat = tgram_net(wav)
+            tgram_feat = tgram_feat.squeeze().mean(dim=0).cpu().numpy()
+
+            combined_feat = feat_t + tgram_feat
+
             mid, status = mid.item(), status.item()
 
             for idx, metric in id2metric.items():
                 wn = metric.split('_')[0]
                 if wn == 'D':
                     dname = metric.split('_')[1]
-                    score = edfunc[dname](feat_t)
+                    score = edfunc[dname](combined_feat)
 
                 elif wn == 'G':
                     dd, st, sc = tuple(metric.split('_')[1:])
@@ -239,7 +232,7 @@ def test(netD, netG, te_ld, train_embs, logger, device):
     aver_of_all_me = []
     for idx in range(len(y_true_all)):
         result = []
-        y_true = dict(sorted(y_true_all[idx].items(), key=lambda t: t[0]))  # sort by machine id
+        y_true = dict(sorted(y_true_all[idx].items(), key=lambda t: t[0]))
         y_score = dict(sorted(y_score_all[idx].items(), key=lambda t: t[0]))
         for mid in y_true.keys():
             AUC_mid = metrics.roc_auc_score(y_true[mid], y_score[mid])
@@ -255,7 +248,6 @@ def test(netD, netG, te_ld, train_embs, logger, device):
 
     logger.info('-' * 110)
     return aver_of_all_me[best_idx, :], best_metric
-
 
 def main(logger):
     train_data = seg_set(param, param['train_set'], 'train')
@@ -277,7 +269,7 @@ def main(logger):
     device = torch.device('cuda:{}'.format(param['card_id']))
     netD = Discriminator(param)
     netG = AEDC(param)
-    tgram_net = TgramNet(embedding_dim=512)  # 确保embedding_dim与Discriminator的输出特征形状相同
+    tgram_net = TgramNet(embedding_dim=512)
 
     if param['resume']:
         pth_file = torch.load(utils.get_model_pth(param), map_location=torch.device('cpu'))
@@ -298,21 +290,21 @@ def main(logger):
                               lr=param['train']['lrG'],
                               betas=(param['train']['beta1'], 0.999))
 
-    train(netD, netG, tgram_net, tr_ld, te_ld, optimD, optimG, logger, device, best_aver)
-
-
+    train(netD, netG, tgram_net, tr_ld, te_ld, optimD, optimG, logger, device, best_aver, param)
 
 if __name__ == '__main__':
     mt_list = ['fan', 'pump', 'slider', 'ToyCar', 'ToyConveyor', 'valve']
     card_num = torch.cuda.device_count()
     parser = argparse.ArgumentParser()
     parser.add_argument('--mt', choices=mt_list, default='fan')
-    parser.add_argument('-c', '--card_id', type=int, choices=list(range(card_num)), default=6)
+    parser.add_argument('-c', '--card_id', type=int, choices=list(range(card_num)), default=0)
     parser.add_argument('--resume', action='store_true', default=False)
     parser.add_argument('--seed', type=int, default=783)
+    parser.add_argument('--config', type=str,default='config.yaml', help='Path to the configuration file')
     opt = parser.parse_args()
 
     utils.set_seed(opt.seed)
+    param = load_config(opt.config)
     param['card_id'] = opt.card_id
     param['model_pth'] = utils.get_model_pth(param)
     param['resume'] = opt.resume

@@ -66,7 +66,6 @@ class base_set:
             self.all_clip_spec = np.vstack((self.all_clip_spec, all_clip_spec))
 
         self.seg_per_clip = (all_clip_spec.shape[-1] - self.pm['feat']['frame_num'] + 1) // self.pm['feat']['graph_hop_f']
-        print(f"Finished cal_spec for mt={mt}. Total wav files: {len(self.all_clip_wav)}")
 
     def get_mid(self):
         return np.unique(self.all_mid[:]).tolist()
@@ -111,8 +110,6 @@ class seg_set(Dataset, base_set):
 
     def get_clip_wav_data(self, idx):
         clip_id = idx // self.seg_per_clip
-        print(f"Fetching wav data for idx={idx}, clip_id={clip_id}")
-        print(f"Total wav files available: {len(self.all_clip_wav)}")
         return self.all_clip_wav[clip_id]
 
 
@@ -134,7 +131,7 @@ class clip_set(Dataset, base_set):
             data[seg_id, 0, :, :] = self.all_clip_spec[idx, :, seg_id: seg_id + self.pm['feat']['frame_num']]
         mid = self.all_mid[idx]
         label = self.all_label[idx]
-        return data, mid, label
+        return data, mid, label,idx
 
     def get_clip_wav_data(self, idx):
         return self.all_clip_wav[idx]
