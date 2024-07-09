@@ -166,18 +166,34 @@ def train(netD, netG, tgram_net, tr_ld, te_ld, optimD, optimG, logger, device, b
 
     torch.save({'netD': bestD, 'netG': bestG, 'best_aver': best_aver}, param['model_pth'])
 
-def test(netD, netG, te_ld, train_embs, tgram_net,logger, device, param):
+def test(netD, netG, te_ld, train_embs, tgram_net, logger, device, param):
     D_metric = ['D_maha', 'D_knn', 'D_lof', 'D_cos']
     G_metric = ['G_x_2_sum', 'G_x_2_min', 'G_x_2_max', 'G_x_1_sum', 'G_x_1_min', 'G_x_1_max',
                 'G_z_2_sum', 'G_z_2_min', 'G_z_2_max', 'G_z_1_sum', 'G_z_1_min', 'G_z_1_max',
                 'G_z_cos_sum', 'G_z_cos_min', 'G_z_cos_max']
-    all_metric = D_metric + G_metric
     edetect = EDIS.EmbeddingDetector(train_embs)
     edfunc = {'maha': edetect.maha_score, 'knn': edetect.knn_score,
               'lof': edetect.lof_score, 'cos': edetect.cos_score}
-    metric2id = {m: meid for m, meid in zip(all_metric, range(len(all_metric)))}
+
+    all_metric = []
+    metric2id = {}
+    idx = 0
+    for metric in D_metric:
+        for feature_type in ['combined', 'feat_t', 'tgram_feat']:
+            metric2id[f"{metric}_{feature_type}"] = idx
+            all_metric.append(f"{metric}_{feature_type}")
+            idx += 1
+
+    for metric in G_metric:
+        metric2id[metric] = idx
+        all_metric.append(metric)
+        idx += 1
+
     id2metric = {v: k for k, v in metric2id.items()}
 
+    # 关键打印语句
+    print("metric2id 和 id2metric 生成完成")
+    
     def specfunc(x):
         return x.sum(axis=tuple(list(range(1, x.ndim))))
     stfunc = {'2': lambda x, y: (x - y).pow(2),
@@ -189,14 +205,20 @@ def test(netD, netG, te_ld, train_embs, tgram_net,logger, device, param):
 
     netD.eval()
     netG.eval()
-    y_true_all, y_score_all = [{} for _ in metric2id.keys()], [{} for _ in metric2id.keys()]
+    y_true_all = [{} for _ in range(len(all_metric))]
+    y_score_all = [{} for _ in range(len(all_metric))]
+
+    def normalize_score(score):
+        """Ensure score is a scalar value."""
+        if isinstance(score, (list, np.ndarray)):
+            return score[0]
+        return score
+
     with torch.no_grad():
-        for mel, mid, status,idx in te_ld:
+        for mel, mid, status, idx in te_ld:
             mel = mel.squeeze(0).to(device)
             wav = te_ld.dataset.get_clip_wav_data(idx)
-            #print(f"te_ld wav0:{wav.shape}")
             wav = torch.from_numpy(wav).unsqueeze(0).to(device)
-            #print(f"te_ld wav1:{wav.shape}")
             wav = wav.unsqueeze(1)  # Add channel dimension for Conv1D
 
             _, feat_t = netD(mel)
@@ -207,27 +229,43 @@ def test(netD, netG, te_ld, train_embs, tgram_net,logger, device, param):
             tgram_feat = tgram_net(wav)
             tgram_feat = tgram_feat.squeeze().mean(dim=0).cpu().numpy()
 
-            combined_feat = feat_t + tgram_feat
+            combined_feat = (feat_t + tgram_feat) / 2
 
             mid, status = mid.item(), status.item()
 
-            for idx, metric in id2metric.items():
+            # 关键特征打印语句
+            print(f"计算特征完成 - mid: {mid}, status: {status}")
+
+            for metric, metric_id in metric2id.items():
                 wn = metric.split('_')[0]
                 if wn == 'D':
                     dname = metric.split('_')[1]
-                    score = edfunc[dname](combined_feat)
+                    feature_type = metric.split('_')[2]
+                    if feature_type == "combined":
+                        score = edfunc[dname](combined_feat)
+                        print(f"D metric: {metric}, Score: {score}")
+                    elif feature_type == "feat_t":
+                        score = edfunc[dname](feat_t)
+                        print(f"+D metric: {metric}, Score: {score}")
+                    elif feature_type == "tgram_feat":
+                        score = edfunc[dname](tgram_feat)
+                        print(f"+D metric: {metric}, Score: {score}")
 
                 elif wn == 'G':
                     dd, st, sc = tuple(metric.split('_')[1:])
                     ori = mel if dd == 'x' else melz
                     hat = recon if dd == 'x' else reconz
                     score = scfunc[sc](specfunc(stfunc[st](hat, ori)))
+                    print(f"G metric: {metric}, Score: {score}")
 
-                if mid not in y_true_all[idx].keys():
-                    y_true_all[idx][mid] = []
-                    y_score_all[idx][mid] = []
-                y_true_all[idx][mid].append(status)
-                y_score_all[idx][mid].append(score)
+                score = normalize_score(score)
+
+                if mid not in y_true_all[metric_id].keys():
+                    y_true_all[metric_id][mid] = []
+                    y_score_all[metric_id][mid] = []
+
+                y_true_all[metric_id][mid].append(status)
+                y_score_all[metric_id][mid].append(score)
 
     aver_of_all_me = []
     for idx in range(len(y_true_all)):
@@ -241,6 +279,7 @@ def test(netD, netG, te_ld, train_embs, tgram_net,logger, device, param):
         aver_over_mid = np.mean(result, axis=0)
         aver_of_m = np.mean(aver_over_mid)
         aver_of_all_me.append([aver_over_mid[0], aver_over_mid[1], aver_of_m])
+
     aver_of_all_me = np.array(aver_of_all_me)
     best_aver = np.max(aver_of_all_me[:, 2])
     best_idx = np.where(aver_of_all_me[:, 2] == best_aver)[0][0]
@@ -248,6 +287,10 @@ def test(netD, netG, te_ld, train_embs, tgram_net,logger, device, param):
 
     logger.info('-' * 110)
     return aver_of_all_me[best_idx, :], best_metric
+
+
+
+
 
 def main(logger):
     train_data = seg_set(param, param['train_set'], 'train')
