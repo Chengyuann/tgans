@@ -71,7 +71,7 @@ def train_one_epoch(netD, netG, tr_ld, optimD, optimG, device, d2g_eff, param):
 
     for i, (mel, _, _) in enumerate(tr_ld):
         mel = mel.to(device)
-        recon = netG(mel)
+        recon = netG(mel, outz=False, apply_diffusion=True)  # 获取重构图像，应用diffusion
         pred_real, _ = netD(mel)
         pred_fake, _ = netD(recon.detach())
         gradient_penalty = compute_gradient_penalty(netD, mel.data, recon.data, device)
@@ -81,7 +81,7 @@ def train_one_epoch(netD, netG, tr_ld, optimD, optimG, device, d2g_eff, param):
         optimD.step()
 
         if i % param['train']['wgan']['ncritic'] == 0:
-            recon = netG(mel)
+            recon = netG(mel, outz=False, apply_diffusion=True)  # 获取重构图像，应用diffusion
             _, feat_real = netD(mel)
             _, feat_fake = netD(recon)
             reconl = MSE(recon, mel)
@@ -101,6 +101,7 @@ def train_one_epoch(netD, netG, tr_ld, optimD, optimG, device, d2g_eff, param):
     aver_loss['gloss'] /= gloss_num
     aver_loss['gloss'] = f"{aver_loss['gloss']:.4e}"
     return netD, netG, aver_loss
+
 
 def get_d_aver_emb(netD, tgram_net, train_set, device):
     '''
@@ -180,8 +181,9 @@ def test(netD, netG, te_ld, train_embs, tgram_net, logger, device, param):
     idx = 0
     for metric in D_metric:
         for feature_type in ['combined', 'feat_t', 'tgram_feat']:
-            metric2id[f"{metric}_{feature_type}"] = idx
-            all_metric.append(f"{metric}_{feature_type}")
+            metric_name = f"{metric}_{feature_type}"
+            metric2id[metric_name] = idx
+            all_metric.append(metric_name)
             idx += 1
 
     for metric in G_metric:
@@ -191,9 +193,10 @@ def test(netD, netG, te_ld, train_embs, tgram_net, logger, device, param):
 
     id2metric = {v: k for k, v in metric2id.items()}
 
-    # 关键打印语句
-    print("metric2id 和 id2metric 生成完成")
-    
+    # 打印 metric2id 和 id2metric
+    print("metric2id:", metric2id)
+    print("id2metric:", id2metric)
+
     def specfunc(x):
         return x.sum(axis=tuple(list(range(1, x.ndim))))
     stfunc = {'2': lambda x, y: (x - y).pow(2),
@@ -233,7 +236,7 @@ def test(netD, netG, te_ld, train_embs, tgram_net, logger, device, param):
 
             mid, status = mid.item(), status.item()
 
-            # 关键特征打印语句
+            # 打印特征
             print(f"计算特征完成 - mid: {mid}, status: {status}")
 
             for metric, metric_id in metric2id.items():
@@ -287,6 +290,7 @@ def test(netD, netG, te_ld, train_embs, tgram_net, logger, device, param):
 
     logger.info('-' * 110)
     return aver_of_all_me[best_idx, :], best_metric
+
 
 
 
