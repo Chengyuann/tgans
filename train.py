@@ -57,6 +57,7 @@ def compute_gradient_penalty(D, real_samples, fake_samples, device):
         retain_graph=True,
         only_inputs=True,
     )[0]
+    
     gradients = gradients.view(gradients.size(0), -1)
     gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
     return gradient_penalty
@@ -101,6 +102,7 @@ def train_one_epoch(netD, netG, tr_ld, optimD, optimG, device, d2g_eff, param):
     aver_loss['gloss'] /= gloss_num
     aver_loss['gloss'] = f"{aver_loss['gloss']:.4e}"
     return netD, netG, aver_loss
+
 
 
 def get_d_aver_emb(netD, tgram_net, train_set, device):
@@ -225,7 +227,7 @@ def test(netD, netG, te_ld, train_embs, tgram_net, logger, device, param):
             wav = wav.unsqueeze(1)  # Add channel dimension for Conv1D
 
             _, feat_t = netD(mel)
-            recon = netG(mel)
+            recon = netG(mel, outz=False, apply_diffusion=True)
             melz = netG(mel, outz=True)
             reconz = netG(recon, outz=True)
             feat_t = feat_t.mean(axis=0, keepdim=True).cpu().numpy()
@@ -239,27 +241,38 @@ def test(netD, netG, te_ld, train_embs, tgram_net, logger, device, param):
             # 打印特征
             print(f"计算特征完成 - mid: {mid}, status: {status}")
 
-            for metric, metric_id in metric2id.items():
-                wn = metric.split('_')[0]
-                if wn == 'D':
-                    dname = metric.split('_')[1]
-                    feature_type = metric.split('_')[2]
+            for metric in D_metric:
+                for feature_type in ['combined', 'feat_t', 'tgram_feat']:
+                    metric_name = f"{metric}_{feature_type}"
+                    metric_id = metric2id[metric_name]
                     if feature_type == "combined":
-                        score = edfunc[dname](combined_feat)
-                        print(f"D metric: {metric}, Score: {score}")
+                        score = edfunc[metric](combined_feat)
+                        print(f"D metric: {metric_name}, Score: {score}")
                     elif feature_type == "feat_t":
-                        score = edfunc[dname](feat_t)
-                        print(f"+D metric: {metric}, Score: {score}")
+                        score = edfunc[metric](feat_t)
+                        print(f"+D metric: {metric_name}, Score: {score}")
                     elif feature_type == "tgram_feat":
-                        score = edfunc[dname](tgram_feat)
-                        print(f"+D metric: {metric}, Score: {score}")
+                        score = edfunc[metric](tgram_feat)
+                        print(f"+D metric: {metric_name}, Score: {score}")
 
-                elif wn == 'G':
-                    dd, st, sc = tuple(metric.split('_')[1:])
-                    ori = mel if dd == 'x' else melz
-                    hat = recon if dd == 'x' else reconz
-                    score = scfunc[sc](specfunc(stfunc[st](hat, ori)))
-                    print(f"G metric: {metric}, Score: {score}")
+                    score = normalize_score(score)
+
+                    if mid not in y_true_all[metric_id].keys():
+                        y_true_all[metric_id][mid] = []
+                        y_score_all[metric_id][mid] = []
+
+                    y_true_all[metric_id][mid].append(status)
+                    y_score_all[metric_id][mid].append(score)
+
+            for metric in G_metric:
+                metric_id = metric2id[metric]
+                dd, st, sc = tuple(metric.split('_')[1:])
+                ori = mel if dd == 'x' else melz
+                hat = recon if dd == 'x' else reconz
+                if isinstance(ori, tuple): ori = ori[0]  # 确保 ori 是张量
+                if isinstance(hat, tuple): hat = hat[0]  # 确保 hat 是张量
+                score = scfunc[sc](specfunc(stfunc[st](hat, ori)))
+                print(f"G metric: {metric}, Score: {score}")
 
                 score = normalize_score(score)
 
@@ -290,6 +303,8 @@ def test(netD, netG, te_ld, train_embs, tgram_net, logger, device, param):
 
     logger.info('-' * 110)
     return aver_of_all_me[best_idx, :], best_metric
+
+
 
 
 
