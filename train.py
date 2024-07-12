@@ -224,23 +224,18 @@ def test(netD, netG, te_ld, train_embs, tgram_net, logger, device, param):
 
             mid, status = mid.item(), status.item()
 
-
             for metric in D_metric:
                 dname, feature_type = metric.split('_')
-                print(f"Processing metric: {metric}, feature_type: {feature_type}")
+                metric_id = metric2id[metric]
                 if feature_type == "combined":
-                    print("Using combined feature")
                     score = edfunc[dname](combined_feat)
                 elif feature_type == "feat":
-                    print("Using feat_t")
                     score = edfunc[dname](feat_t)
                 elif feature_type == "tfeat":
-                    print("Using tgram_feat")
                     score = edfunc[dname](tgram_feat)
 
                 print(f"D metric: {metric}, Score: {score}")
                 score = normalize_score(score)
-                metric_id = metric2id[metric]
 
                 if mid not in y_true_all[metric_id]:
                     y_true_all[metric_id][mid] = []
@@ -275,6 +270,7 @@ def test(netD, netG, te_ld, train_embs, tgram_net, logger, device, param):
             AUC_mid = metrics.roc_auc_score(y_true[mid], y_score[mid])
             pAUC_mid = metrics.roc_auc_score(y_true[mid], y_score[mid], max_fpr=param['detect']['p'])
             result.append([AUC_mid, pAUC_mid])
+            print(f"Metric: {id2metric[idx]}, mid: {mid}, AUC: {AUC_mid}, pAUC: {pAUC_mid}")
         aver_over_mid = np.mean(result, axis=0)
         aver_of_m = np.mean(aver_over_mid)
         aver_of_all_me.append([aver_over_mid[0], aver_over_mid[1], aver_of_m])
@@ -286,6 +282,7 @@ def test(netD, netG, te_ld, train_embs, tgram_net, logger, device, param):
 
     logger.info('-' * 110)
     return aver_of_all_me[best_idx, :], best_metric
+
 
 
 
