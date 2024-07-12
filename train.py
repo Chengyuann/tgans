@@ -189,7 +189,6 @@ def test(netD, netG, te_ld, train_embs, tgram_net, logger, device, param):
     metric2id = {m: i for i, m in enumerate(all_metric)}
     id2metric = {i: m for m, i in metric2id.items()}
 
-
     def specfunc(x):
         return x.sum(axis=tuple(range(1, x.ndim)))
     stfunc = {'2': lambda x, y: (x - y).pow(2), '1': lambda x, y: (x - y).abs(), 'cos': lambda x, y: 1 - F.cosine_similarity(x, y)}
@@ -209,57 +208,49 @@ def test(netD, netG, te_ld, train_embs, tgram_net, logger, device, param):
     with torch.no_grad():
         for mel, mid, status, idx in te_ld:
             mel = mel.squeeze(0).to(device)
-            wav = te_ld.dataset.get_clip_wav_data(idx)
-            wav = torch.from_numpy(wav).unsqueeze(0).to(device)
-            wav = wav.unsqueeze(1)  # Add channel dimension for Conv1D
+            feat_t = netD(mel)[1].mean(axis=0, keepdim=True).cpu().numpy()
 
-            _, feat_t = netD(mel)
+            if tgram_net:
+                wav = te_ld.dataset.get_clip_wav_data(idx)
+                wav = torch.from_numpy(wav).unsqueeze(0).to(device).unsqueeze(1)  # Add channel dimension for Conv1D
+                tgram_feat = tgram_net(wav).squeeze().mean(dim=0).cpu().numpy().reshape(1, -1)
+                combined_feat = (feat_t + tgram_feat) / 2
+            else:
+                tgram_feat, combined_feat = None, None
+
             recon = netG(mel)
             melz = netG(mel, outz=True)
             reconz = netG(recon, outz=True)
-            feat_t = feat_t.mean(axis=0, keepdim=True).cpu().numpy()
-            tgram_feat = tgram_net(wav).squeeze().mean(dim=0).cpu().numpy().reshape(1, -1)
-
-            combined_feat = (feat_t + tgram_feat) / 2
 
             mid, status = mid.item(), status.item()
 
-            for metric in D_metric:
-                dname, feature_type = metric.split('_')
-                metric_id = metric2id[metric]
-                if feature_type == "combined":
-                    score = edfunc[dname](combined_feat)
-                elif feature_type == "feat":
-                    score = edfunc[dname](feat_t)
-                elif feature_type == "tfeat":
-                    score = edfunc[dname](tgram_feat)
+            for idx, metric in id2metric.items():
+                if metric in D_metric:
+                    dname, feature_type = metric.split('_')
+                    if feature_type == "combined" and combined_feat is not None:
+                        score = edfunc[dname](combined_feat)
+                    elif feature_type == "feat":
+                        score = edfunc[dname](feat_t)
+                    elif feature_type == "tfeat" and tgram_feat is not None:
+                        score = edfunc[dname](tgram_feat)
 
-                print(f"D metric: {metric}, Score: {score}")
-                score = normalize_score(score)
+                    score = normalize_score(score)
+                    print(f"D metric: {metric}, Score: {score}")
 
-                if mid not in y_true_all[metric_id]:
-                    y_true_all[metric_id][mid] = []
-                    y_score_all[metric_id][mid] = []
+                elif metric in G_metric:
+                    dd, st, sc = tuple(metric.split('_')[1:])
+                    ori = mel if dd == 'x' else melz
+                    hat = recon if dd == 'x' else reconz
+                    score = scfunc[sc](specfunc(stfunc[st](hat, ori)))
+                    score = normalize_score(score)
+                    print(f"G metric: {metric}, Score: {score}")
 
-                y_true_all[metric_id][mid].append(status)
-                y_score_all[metric_id][mid].append(score)
+                if mid not in y_true_all[idx]:
+                    y_true_all[idx][mid] = []
+                    y_score_all[idx][mid] = []
 
-            for metric in G_metric:
-                metric_id = metric2id[metric]
-                dd, st, sc = tuple(metric.split('_')[1:])
-                ori = mel if dd == 'x' else melz
-                hat = recon if dd == 'x' else reconz
-                score = scfunc[sc](specfunc(stfunc[st](hat, ori)))
-                print(f"G metric: {metric}, Score: {score}")
-
-                score = normalize_score(score)
-
-                if mid not in y_true_all[metric_id]:
-                    y_true_all[metric_id][mid] = []
-                    y_score_all[metric_id][mid] = []
-
-                y_true_all[metric_id][mid].append(status)
-                y_score_all[metric_id][mid].append(score)
+                y_true_all[idx][mid].append(status)
+                y_score_all[idx][mid].append(score)
 
     aver_of_all_me = []
     for idx in range(len(y_true_all)):
@@ -268,7 +259,7 @@ def test(netD, netG, te_ld, train_embs, tgram_net, logger, device, param):
         y_score = dict(sorted(y_score_all[idx].items(), key=lambda t: t[0]))
         for mid in y_true.keys():
             AUC_mid = metrics.roc_auc_score(y_true[mid], y_score[mid])
-            pAUC_mid = metrics.roc_auc_score(y_true[mid], y_score[mid], max_fpr=param['detect']['p'])
+            pAUC_mid = metrics.roc_auc_score(y_true[mid], y_score[mid], max_fpr=param['detect']['p'] if param else 0.1)
             result.append([AUC_mid, pAUC_mid])
             print(f"Metric: {id2metric[idx]}, mid: {mid}, AUC: {AUC_mid}, pAUC: {pAUC_mid}")
         aver_over_mid = np.mean(result, axis=0)
@@ -282,6 +273,7 @@ def test(netD, netG, te_ld, train_embs, tgram_net, logger, device, param):
 
     logger.info('-' * 110)
     return aver_of_all_me[best_idx, :], best_metric
+
 
 
 
