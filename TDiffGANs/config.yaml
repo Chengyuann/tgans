@@ -1,0 +1,75 @@
+dataset_dir: /home/macy/Data/DCASE20/dataset_dir
+model_dir: ./model
+spec_dir: ../../spec
+log_dir: ./log
+
+mt:
+  train: ['valve']
+  test: ['valve']
+
+train_set: 'deval'  # 'dev', 'eval', 'deval'
+
+feat:
+  spec: 'mel'
+  fft_num: 2048
+  mel_bin: 128
+  frame_hop: 512
+  frame_num: 128
+  graph_hop_f: 1
+
+net:
+  act: ['leakyrelu', 'relu']  # Encoder, Decoder
+  normalize: {'d':'ln', 'g': 'bn'}
+  nz: 256
+  ndf: 32
+  ngf: 32
+  isize: 128
+
+train:
+  lrD: 0.0002
+  lrG: 0.0002
+  beta1: 0.5
+  epoch: 50
+  bs: 512
+  wgan:
+    feat_match_eff: 0.05
+    match_item: {'mu': 1}  # 'mu': 1, 'sigma': 1
+    ncritic: 1
+    lambda_gp: 10  # for gradient penalty
+
+detect:
+  p: 0.1
+
+repre:
+  normal: 0
+  anomaly: 1
+
+
+
+
+
+
+
+
+#pump  [AUC: 0.8728] [pAUC: 0.7524] [Average: 0.8126] [Metric: D_lof]
+#slider [AUC: 0.9250] [pAUC: 0.8051] [Average: 0.8650] [Metric: G_x_2_sum]
+#ToyCar [AUC: 0.9271] [pAUC: 0.8054] [Average: 0.8662] [Metric: D_knn]
+#ToyConveyor [AUC: 0.8111] [pAUC: 0.6547] [Average: 0.7329] [Metric: G_z_2_min]
+# valve  [AUC: 0.8906] [pAUC: 0.6616] [Average: 0.7761] [Metric: G_z_cos_min]
+
+
+
+##个人复现 train
+## pump: [AUC: 0.8269] [pAUC: 0.6913] [aver: 0.7591] [metric: D_lof] [best: 0.8060]
+##slider: [AUC: 0.9274] [pAUC: 0.7994] [aver: 0.8634] [metric: G_x_1_sum] [best: 0.8660]
+## ToyCar: [AUC: 0.9235] [pAUC: 0.7806] [aver: 0.8520] [metric: D_maha]  [best: 0.8572]
+## ToyConveyor: [AUC: 0.7656] [pAUC: 0.6143] [aver: 0.6900] [metric: G_z_1_min] [best: 0.7155]
+##valve: [AUC: 0.8426] [pAUC: 0.5762] [aver: 0.7094] [metric: G_x_2_sum] [best: 0.7908] 
+
+## test
+##fan => [AUC: 0.8325] [pAUC: 0.6961] [Average: 0.7643] [Metric: D_lof]
+## pump => [AUC: 0.8702] [pAUC: 0.7417] [Average: 0.8060] [Metric: D_lof]
+## slider => [AUC: 0.9239] [pAUC: 0.8081] [Average: 0.8660] [Metric: G_x_1_sum]
+## ToyCar => [AUC: 0.9256] [pAUC: 0.7887] [Average: 0.8572] [Metric: D_maha]
+## ToyConveyor => [AUC: 0.7973] [pAUC: 0.6337] [Average: 0.7155] [Metric: G_z_1_min]
+##valve => [AUC: 0.8731] [pAUC: 0.7086] [Average: 0.7908] [Metric: G_z_cos_min]

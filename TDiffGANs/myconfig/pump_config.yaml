@@ -1,0 +1,48 @@
+dataset_dir: /home/macy/Data/DCASE20/dataset_dir
+model_dir: ./mymodel
+spec_dir: ../../spec
+log_dir: ./log
+
+mt:
+  train: ['pump']
+  test: ['pump']
+
+train_set: 'deval'  # 'dev', 'eval', 'deval'
+
+feat:
+  spec: 'mel'
+  fft_num: 2048
+  mel_bin: 128
+  frame_hop: 512
+  frame_num: 128
+  graph_hop_f: 1
+
+net:
+  act: ['leakyrelu', 'relu']  # Encoder, Decoder
+  normalize: {'d':'ln', 'g': 'ln'}
+  nz: 256
+  ndf: 32
+  ngf: 32
+  isize: 128
+
+train:
+  lrD: 0.0002
+  lrG: 0.0002
+  beta1: 0.5
+  epoch: 100
+  bs: 512
+  wgan:
+    feat_match_eff: 1
+    match_item: {'mu': 1, 'sigma': 1}  # 'mu': 1, 'sigma': 1
+    ncritic: 1
+    lambda_gp: 10  # for gradient penalty
+
+detect:
+  p: 0.1
+
+repre:
+  normal: 0
+  anomaly: 1
+
+#epoch 49: [recon: 4.3871e-03] [d2g: 4.7905e-04] [gloss: 4.8662e-03] [best: 0.8143] [time: 3453s]
+#pump: [AUC: 0.8482] [pAUC: 0.7312] [aver: 0.7897] [metric: D_lof]
