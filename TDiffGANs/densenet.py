@@ -2,7 +2,7 @@ import torch.nn as nn
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
-
+from torch.nn.utils import spectral_norm
 
 
 def ActLayer(act):
@@ -266,40 +266,40 @@ class Discriminator(nn.Module):
         ndf, isize = param['net']['ndf'], param['net']['isize']
         act, normalize = param['net']['act'][0], param['net']['normalize']['d']
 
-        # Initialize the layers
+        # Initialize the layers with spectral normalization
         self.conv1 = nn.Sequential(
-            nn.Conv2d(1, ndf, 4, 2, 1, bias=False),
+            spectral_norm(nn.Conv2d(1, ndf, 4, 2, 1, bias=False)),
             NormLayer(normalize, ndf, isize // 2),
             ActLayer(act)
         )
 
         self.conv2 = nn.Sequential(
-            nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
+            spectral_norm(nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False)),
             NormLayer(normalize, ndf * 2, isize // 4),
             ActLayer(act)
         )
 
         self.conv3 = nn.Sequential(
-            nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
+            spectral_norm(nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False)),
             NormLayer(normalize, ndf * 4, isize // 8),
             ActLayer(act)
         )
 
         self.conv4 = nn.Sequential(
-            nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
+            spectral_norm(nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False)),
             NormLayer(normalize, ndf * 8, isize // 16),
             ActLayer(act)
         )
 
         self.conv5 = nn.Sequential(
-            nn.Conv2d(ndf * 8, ndf * 16, 4, 2, 1, bias=False),
+            spectral_norm(nn.Conv2d(ndf * 8, ndf * 16, 4, 2, 1, bias=False)),
             NormLayer(normalize, ndf * 16, isize // 32),
             ActLayer(act)
         )
 
         # Final layer for feature extraction and classification
         self.feat_extract_layer = nn.Sequential(
-            nn.Conv2d(ndf * 16, ndf * 16, 4, 1, 0, bias=False, groups=ndf * 16),
+            spectral_norm(nn.Conv2d(ndf * 16, ndf * 16, 4, 1, 0, bias=False, groups=ndf * 16)),
             nn.Flatten()
         )
 
@@ -318,13 +318,9 @@ class Discriminator(nn.Module):
         feat = self.feat_extract_layer(x)
         pred = self.output_layer(feat)
         return pred, feat
-    
 
 
 
-
-import torch
-import torch.nn as nn
 
 class TgramNet(nn.Module):
     def __init__(self, num_layer=3, mel_bins=128, win_len=2048, hop_len=313,embedding_dim=512):#344
